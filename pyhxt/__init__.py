@@ -13,11 +13,13 @@ from collections import namedtuple
 
 import numpy as np
 
+__version__ = '0.1.0'
 __all__ = ['tetrahedralize', 'Mesh', 'library']
 
 # pyhxt_flags.h
 PREBOND, NO_RECOVER_DELAUNAY, SEEDS_FIRST, NONREPRODUCIBLE = 1, 2, 4, 8
 FAST = PREBOND | NO_RECOVER_DELAUNAY | SEEDS_FIRST
+ABI = 2  # pyhxt_abi() of the library this module calls
 
 Mesh = namedtuple('Mesh', 'points tets volume triangles triangle_colors')
 Mesh.__doc__ = """HXT's mesh. points: (n, 3), the input points first, then the seeds, then
@@ -41,10 +43,13 @@ def library():
         else:
             raise OSError('libpyhxt.so not found: run build.sh, or set PYHXT_LIB')
         lib = ctypes.CDLL(path)
+        if lib.pyhxt_abi() != ABI:
+            raise OSError('{} has interface {}, this pyhxt needs {}: rebuild it'.format(
+                path, lib.pyhxt_abi(), ABI))
         u32, f64 = (np.ctypeslib.ndpointer(t, flags='C_CONTIGUOUS')
                     for t in (np.uint32, np.float64))
         lib.pyhxt_tetmesh.argtypes = [
-            ctypes.c_uint32, f64, ctypes.c_uint32, f64, ctypes.c_uint64, u32, u32,
+            ctypes.c_uint32, f64, ctypes.c_uint32, f64, ctypes.c_uint32, ctypes.c_uint64, u32, u32,
             ctypes.c_uint32, u32, u32, ctypes.c_int, ctypes.c_double, ctypes.c_double,
             ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_int, ctypes.c_int,
             ctypes.c_char_p, ctypes.POINTER(ctypes.c_void_p)]
@@ -70,10 +75,10 @@ def tetrahedralize(points, triangles, colors=None, volumes=None, holes=None, see
     :param colors: (m,) a positive surface number per triangle (default: all 1).
     :param volumes: the volumes to mesh, each a list of the surface numbers bounding it
         (the inner surfaces of holes included). Default: HXT finds the volumes itself and
-        meshes all of them, the inside of holes too (see `holes`).
-    :param holes: (k, 3) points inside regions not to keep: the volumes holding them are
-        dropped from the output. Without `volumes` they are meshed first, so prefer
-        `volumes` for speed. They also serve as seeds.
+        meshes all of them but the ones holding a hole point.
+    :param holes: (k, 3) points inside regions not to mesh, as TetGen's: the volumes
+        holding them are left out right after HXT finds its volumes, before refinement.
+        They also serve as seeds.
     :param seeds: (k, 3) extra points inside the solid (or anywhere), inserted first. A
         point inside each hole whose surface points are co-spherical (a sphere, a bead)
         keeps HXT's initial Delaunay from degenerating there: 10x faster on a sphere
@@ -112,7 +117,7 @@ def tetrahedralize(points, triangles, colors=None, volumes=None, holes=None, see
 
     mesh = ctypes.c_void_p()
     status = lib.pyhxt_tetmesh(
-        len(points), points, len(seed), seed, len(triangles), triangles, colors,
+        len(points), points, len(seed), seed, nholes, len(triangles), triangles, colors,
         len(offsets) - 1, offsets, surfaces, int(threads), float(size_min),
         float(size) if size else 0., lc, 1e-12, float(quality), int(bool(optimize)), flags,
         None if log is None else os.fsencode(log), ctypes.byref(mesh))
@@ -132,13 +137,9 @@ def tetrahedralize(points, triangles, colors=None, volumes=None, holes=None, see
     finally:
         lib.pyhxt_free(mesh)
 
-    nvol = len(offsets) - 1 if volumes is not None else None
+    # HXT's exterior: its ghost tets, and the colour of the outside and of the holes
     keep = (T[:, 3] != np.iinfo(np.uint32).max) & (col != np.iinfo(np.uint32).max)
-    if nvol is not None:
-        keep &= col < nvol
-    if nholes:
-        hole_vertices = len(points) + np.arange(nholes)
-        dropped = np.unique(col[keep & np.isin(T, hole_vertices).any(axis=1)])
-        keep &= ~np.isin(col, dropped)
+    if volumes is not None:
+        keep &= col < len(volumes)
     return Mesh(X, T[keep].astype(np.int64), col[keep].astype(np.int64),
                 tri.astype(np.int64), tcol.astype(np.int64))

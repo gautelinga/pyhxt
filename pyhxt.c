@@ -8,6 +8,7 @@
 #include "pyhxt_flags.h"
 
 int pyhxt_flags = 0;
+uint32_t pyhxt_hole_first = 0, pyhxt_num_holes = 0;
 static FILE *logfile = NULL;
 
 static HXTStatus messageCallback(HXTMessage *msg)
@@ -35,13 +36,18 @@ static HXTStatus nodalSizes(double *pts, uint32_t *volume, size_t n, void *data)
   return HXT_STATUS_OK;
 }
 
+/* The version of this interface: 2 added nholes. */
+int pyhxt_abi(void) { return 2; }
+
 /* xyz: nv x 3, the surface's vertices; seeds: nseed x 3, embedded points, which follow
- * them as vertices nv, nv + 1, ...; tri: ntri x 3 with one color each; volumes: nvol,
- * each bounded by the surfaces surfaces[offsets[i]:offsets[i+1]]; flags: pyhxt_flags.h
- * (0: as gmsh). On success *out holds HXT's mesh. */
+ * them as vertices nv, nv + 1, ..., the first nholes of them hole points (the volumes
+ * holding them are left out); tri: ntri x 3 with one color each; volumes: nvol, each
+ * bounded by the surfaces surfaces[offsets[i]:offsets[i+1]], or nvol 0 for every volume
+ * HXT finds; flags: pyhxt_flags.h (0: as gmsh). On success *out holds HXT's mesh. */
 int pyhxt_tetmesh(uint32_t nv, const double *xyz, uint32_t nseed, const double *seeds,
-                  uint64_t ntri, const uint32_t *tri, const uint32_t *color, uint32_t nvol,
-                  const uint32_t *offsets, const uint32_t *surfaces, int threads,
+                  uint32_t nholes, uint64_t ntri, const uint32_t *tri,
+                  const uint32_t *color, uint32_t nvol, const uint32_t *offsets,
+                  const uint32_t *surfaces, int threads,
                   double sizeMin, double sizeMax, double lcGlob, double tolerance,
                   double qualityMin, int optimize, int flags, const char *logpath,
                   void **out)
@@ -54,6 +60,8 @@ int pyhxt_tetmesh(uint32_t nv, const double *xyz, uint32_t nseed, const double *
   if(status != HXT_STATUS_OK) goto done;
 
   pyhxt_flags = flags;
+  pyhxt_hole_first = nv;
+  pyhxt_num_holes = nholes < nseed ? nholes : nseed;
   m->vertices.num = m->vertices.size = nv + nseed;
   if((status = hxtAlignedMalloc(&m->vertices.coord,
                                 4 * ((size_t)nv + nseed) * sizeof(double))))
@@ -83,6 +91,7 @@ int pyhxt_tetmesh(uint32_t nv, const double *xyz, uint32_t nseed, const double *
   for(uint64_t i = 0; i < ntri; i++) m->triangles.color[i] = color[i];
 
   m->brep.numVolumes = nvol;
+  if(nvol == 0) goto options; /* HXT finds the volumes and fills the brep itself */
   if((status = hxtAlignedMalloc(&m->brep.numSurfacesPerVolume, nvol * sizeof(uint32_t))) ||
      (status = hxtAlignedMalloc(&m->brep.surfacesPerVolume,
                                 offsets[nvol] * sizeof(uint32_t))))
@@ -98,6 +107,7 @@ int pyhxt_tetmesh(uint32_t nv, const double *xyz, uint32_t nseed, const double *
     goto done;
   for(uint32_t i = 0; i < offsets[nvol]; i++) m->brep.numCurvesPerSurface[i] = 0;
 
+options:;
   HXTTetMeshOptions options = {
     threads, threads, threads, // default, Delaunay and improvement threads
     !(flags & PYHXT_NONREPRODUCIBLE), // reproducible
@@ -112,8 +122,14 @@ int pyhxt_tetmesh(uint32_t nv, const double *xyz, uint32_t nseed, const double *
 
 done:
   pyhxt_flags = 0;
-  if(status == HXT_STATUS_OK)
+  pyhxt_num_holes = 0;
+  if(status == HXT_STATUS_OK) {
+    /* the adjacency (32 B a tet) and flags are not handed out: free them before the caller
+     * allocates its copies, so that HXT's mesh and those copies are not all held at once */
+    hxtAlignedFree(&m->tetrahedra.neigh);
+    hxtAlignedFree(&m->tetrahedra.flag);
     *out = m;
+  }
   else if(m)
     hxtMeshDelete(&m);
   if(logfile) fclose(logfile);

@@ -5,28 +5,44 @@ HXT, the parallel tetrahedral mesher of Marot, Pellerin & Remacle, built on its 
 tetrahedralisation of a closed surface (the surface kept exactly, volumes, holes, a size
 bound), but threaded, fast and for large meshes. It is not a TetGen drop-in.
 
-**State: a working prototype.** The library, a first Python API and pyhxt's speed-ups work
-(below); packaging and wheels are still to come. It is used by mesh-sphere-packing's
-`mesher: hxt` (`hxt_lib`).
+**State: a minimal library (0.1.0).** `pip install` builds it; one Python function, and the C
+interface under it. Linux with gcc and OpenMP only, no wheels yet. It is used by
+mesh-sphere-packing's `mesher: hxt` (`hxt_lib`).
 
-## Use
+## Install and use
 
-    ./build.sh                       # libpyhxt.so, about 10 s
-    PYTHONPATH=. python3 -m pytest tests
-    python3 test.py                  # the C library alone, standard library only
+    pip install git+https://github.com/gautelinga/pyhxt     # builds libpyhxt.so, ~10 s
+    # or, in a clone: pip install .   (./build.sh alone for the bare library)
 
 ```python
 import pyhxt
-mesh = pyhxt.tetrahedralize(points, triangles, colors, holes=hole_points, size=0.05,
-                            threads=8)
-mesh.points, mesh.tets, mesh.volume
+mesh = pyhxt.tetrahedralize(points, triangles, holes=hole_points, size=0.05, threads=8)
+mesh.points      # (n, 3): the input points first, unmoved, then the seeds, then HXT's
+mesh.tets        # (m, 4)
+mesh.volume      # (m,): the volume each tet is in
 ```
 
-The input points come first in `mesh.points`, unmoved, and the input triangles are the
-mesh's boundary: HXT's boundary recovery adds no point on the surface. Differences from
-TetGen: the size is an edge length (TetGen bounds the volume); HXT has no radius-edge or
-angle bound, but an optimisation threshold on its own quality measure; holes are dropped
-after meshing unless the volumes are given (`volumes`), which is faster.
+- **The surface is kept exactly.** The input triangles are the mesh's boundary; HXT's
+  boundary recovery adds no point on the surface (it fails instead).
+- **Volumes.** Without `volumes`, HXT finds every closed volume and meshes all but those
+  holding a hole point, which are left out before refinement, as TetGen's holes. With
+  `volumes` (each a list of the surface numbers, `colors`, that bound it) only those are
+  meshed.
+- **Seeds.** `seeds` (and `holes`) are inserted before the surface. Where a hole's surface
+  points all lie on one sphere, as beads do, a point inside it keeps HXT's initial Delaunay
+  from degenerating (10x faster on a sphere packing, below).
+- **Size.** `size` bounds the edge length; sizes are otherwise interpolated from the
+  surface's edges. TetGen bounds volumes instead (`-a`) and radius-edge ratios (`-q`);
+  HXT has no such bound, but optimises tets below `quality` (its own measure, 1 for the
+  regular tet).
+- **Repeatability.** The same input on the same number of threads gives the same mesh
+  (`reproducible=True`, the default; off is faster).
+- **`fast=False`** runs HXT exactly as gmsh 4.13.1 does (and, given the input in gmsh's
+  order, gives gmsh's mesh to the bit).
+
+Tests: `pytest tests` (the API) and `python3 test.py [libpyhxt.so]` (the C library, standard
+library only). The C interface is in `pyhxt.c`; `pyhxt_abi()` says which version of it a
+library has (2: hole points).
 
 ## What pyhxt changes in HXT (`pyhxt_flags.h`)
 
@@ -40,6 +56,9 @@ surface and quality.
 | `PYHXT_NO_RECOVER_DELAUNAY` | no global Delaunay recovery (a Lawson pass over every face) after the boundary is recovered; the quality after optimisation was the same to three digits | 9.9 s → 0 |
 | `PYHXT_SEEDS_FIRST` | the embedded points (seeds, holes) go into the empty mesh before the surface | empty mesh 15.6 → 1.3 s, with a seed inside each bead |
 | `PYHXT_NONREPRODUCIBLE` | HXT's reproducible mode off | refinement 9.6 → 7.4 s; a new mesh each run |
+
+pyhxt also leaves the volumes holding hole points out right after HXT colours its volumes
+(`hxt_tetMesh.c`), whatever the flags.
 
 Why seeds: points that all lie on one sphere have a degenerate Delaunay inside it, and every
 in-sphere test there falls back to exact arithmetic. In a welded packing there is nothing
@@ -79,8 +98,7 @@ logs, matches gmsh's too. As through gmsh, the mesh depends on the number of thr
 
 ## Build
 
-`build.sh` takes the C and C++ compilers as arguments (gcc and g++ by default; both need
-OpenMP). `-ffp-contract=off` throughout, as gmsh compiles `predicates.c`: x86-64's baseline has no
+`build.sh [output]` uses `$CC` and `$CXX` (gcc and g++ by default; both need OpenMP). `-ffp-contract=off` throughout, as gmsh compiles `predicates.c`: x86-64's baseline has no
 fused multiply-add, so this changes nothing there, but gcc on aarch64 fuses by default,
 which would change the numbers and so the mesh.
 
@@ -91,9 +109,9 @@ which would change the numbers and so the mesh.
 needs, unchanged: `contrib/hxt/{core,predicates,tetMesh,tetBR}`, tetMesh's command-line
 programs left out. Boundary recovery is HXT's own copy of TetGen's (`tetBR/src/tetgenBR`,
 built with `HXT_WITHOUT_GMSH`), not the copy gmsh builds with; the meshes above are the same
-with either. pyhxt's changes to these files are marked `pyhxt:` and guarded by the flags
-above (`tetBR/src/tetgenBR.cxx`, `tetBR/src/hxt_boundary_recovery.cxx`,
-`tetMesh/src/hxt_tetRefine.c`).
+with either. pyhxt's changes to these files are marked `pyhxt:` (`tetBR/src/tetgenBR.cxx`,
+`tetBR/src/hxt_boundary_recovery.cxx`, `tetMesh/src/hxt_tetRefine.c`,
+`tetMesh/src/hxt_tetMesh.c`); with no flag and no hole point they change nothing.
 
 ## Licence
 

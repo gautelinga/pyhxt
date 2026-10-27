@@ -2,10 +2,14 @@
  * With none set, HXT runs exactly as in gmsh. AGPL-3.0-or-later. */
 #ifndef PYHXT_FLAGS_H
 #define PYHXT_FLAGS_H
+#include <stdint.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
 extern int pyhxt_flags;
+/* the hole points: vertices pyhxt_hole_first ... + pyhxt_num_holes - 1; the volumes holding
+ * them are made exterior right after HXT colours its volumes, so not refined or output */
+extern uint32_t pyhxt_hole_first, pyhxt_num_holes;
 #ifdef __cplusplus
 }
 #endif

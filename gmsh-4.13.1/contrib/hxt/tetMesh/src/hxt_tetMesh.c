@@ -19,6 +19,7 @@
 #include "hxt_omp.h"
 
 #include "hxt_boundary_recovery.h"
+#include "pyhxt_flags.h"  // pyhxt
 
 // void aspect_ratio_graph(HXTMesh* mesh) {
 //     // make a count of aspect ratio...
@@ -163,6 +164,26 @@ HXTStatus hxtTetMesh(HXTMesh* mesh,
   // now that tetrahedra are flagged, we can proceed to colorize the mesh
   HXT_ASSERT(mesh->tetrahedra.color == NULL);
   HXT_CHECK( hxtMapColorsToBrep(mesh, tri2TetMap) );
+
+  // pyhxt: the volumes holding a hole point are exterior, as TetGen's holes
+  if (pyhxt_num_holes) {
+    uint8_t* hole;
+    HXT_CHECK( hxtCalloc(&hole, mesh->brep.numVolumes + 1, sizeof(uint8_t)) );
+    for (uint64_t i=0; i<mesh->tetrahedra.num; i++) {
+      uint32_t c = mesh->tetrahedra.color[i];
+      if (c >= mesh->brep.numVolumes) continue;
+      for (int j=0; j<4; j++) {
+        uint32_t v = mesh->tetrahedra.node[4*i+j];
+        if (v >= pyhxt_hole_first && v - pyhxt_hole_first < pyhxt_num_holes) hole[c] = 1;
+      }
+    }
+    #pragma omp parallel for
+    for (uint64_t i=0; i<mesh->tetrahedra.num; i++) {
+      uint32_t c = mesh->tetrahedra.color[i];
+      if (c < mesh->brep.numVolumes && hole[c]) mesh->tetrahedra.color[i] = HXT_COLOR_OUT;
+    }
+    HXT_CHECK( hxtFree(&hole) );
+  }
 
   HXT_CHECK( hxtAlignedFree(&tri2TetMap) );
   HXT_CHECK( hxtAlignedFree(&lines2TetMap) );

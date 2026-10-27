@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyhxt"
+dynamic = ["version"]
+description = "HXT, gmsh's parallel tetrahedral mesher, on its own: fast, threaded meshing of a closed surface"
+readme = "README.md"
+license = {text = "AGPL-3.0-or-later"}
+requires-python = ">=3.8"
+dependencies = ["numpy"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: C",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: Scientific/Engineering :: Mathematics",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.urls]
+Source = "https://github.com/gautelinga/pyhxt"
+
+[tool.setuptools]
+packages = ["pyhxt"]
+
+[tool.setuptools.dynamic]
+version = {attr = "pyhxt.__version__"}

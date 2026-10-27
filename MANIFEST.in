@@ -1,0 +1,3 @@
+include build.sh pyhxt.c pyhxt_flags.h test.py LICENSE README.md
+recursive-include gmsh-4.13.1 *
+recursive-include tests *.py

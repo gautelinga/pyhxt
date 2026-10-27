@@ -1,3 +1,6 @@
 libpyhxt.so
 libpyhxt.so.new
 __pycache__/
+build/
+dist/
+*.egg-info/
