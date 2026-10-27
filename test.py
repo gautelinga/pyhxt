@@ -2,6 +2,7 @@
 cube's surface in, a mesh of volume 1 out, every input point kept where it was.
 Usage: python3 test.py [path/to/libpyhxt.so]"""
 import ctypes
+import hashlib
 import os
 import sys
 
@@ -40,4 +41,7 @@ def vol(t):
 tets = [T[4 * i:4 * i + 4] for i in range(nt.value) if col[i] == 0]
 total = sum(abs(vol(t)) for t in tets)
 assert abs(total - 1) < 1e-12, total
-print('OK: {} vertices, {} tets, volume {!r}'.format(nv.value, len(tets), total))
+# the mesh itself, to compare builds: a compiler or libm that rounds differently shows here
+digest = hashlib.sha256(bytes(X) + bytes(T) + bytes(col)).hexdigest()[:16]
+print('OK: {} vertices, {} tets, volume {!r}, sha256 {}'.format(
+    nv.value, len(tets), total, digest))
