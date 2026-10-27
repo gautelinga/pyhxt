@@ -1,10 +1,13 @@
-/* pyhxt: HXT's hxtTetMesh called as gmsh 4.13.1's meshGRegionHxt.cpp calls it, on arrays.
- * Built against gmsh 4.13.1's contrib/hxt sources. AGPL-3.0-or-later. */
+/* pyhxt: HXT's hxtTetMesh called as gmsh 4.13.1's meshGRegionHxt.cpp calls it, on arrays,
+ * with pyhxt's switches (pyhxt_flags.h) on top. Built against gmsh 4.13.1's contrib/hxt
+ * sources. AGPL-3.0-or-later. */
 #include <stdio.h>
 #include <stdint.h>
 #include "hxt_tetMesh.h"
 #include "hxt_tools.h"
+#include "pyhxt_flags.h"
 
+int pyhxt_flags = 0;
 static FILE *logfile = NULL;
 
 static HXTStatus messageCallback(HXTMessage *msg)
@@ -32,13 +35,16 @@ static HXTStatus nodalSizes(double *pts, uint32_t *volume, size_t n, void *data)
   return HXT_STATUS_OK;
 }
 
-/* xyz: nv x 3; tri: ntri x 3 with one color each; volumes: nvol, each bounded by the
- * surfaces surfaces[offsets[i]:offsets[i+1]]. On success *out holds HXT's mesh. */
-int pyhxt_tetmesh(uint32_t nv, const double *xyz, uint64_t ntri, const uint32_t *tri,
-                    const uint32_t *color, uint32_t nvol, const uint32_t *offsets,
-                    const uint32_t *surfaces, int threads, double sizeMin, double sizeMax,
-                    double lcGlob, double tolerance, double qualityMin, int optimize,
-                    const char *logpath, void **out)
+/* xyz: nv x 3, the surface's vertices; seeds: nseed x 3, embedded points, which follow
+ * them as vertices nv, nv + 1, ...; tri: ntri x 3 with one color each; volumes: nvol,
+ * each bounded by the surfaces surfaces[offsets[i]:offsets[i+1]]; flags: pyhxt_flags.h
+ * (0: as gmsh). On success *out holds HXT's mesh. */
+int pyhxt_tetmesh(uint32_t nv, const double *xyz, uint32_t nseed, const double *seeds,
+                  uint64_t ntri, const uint32_t *tri, const uint32_t *color, uint32_t nvol,
+                  const uint32_t *offsets, const uint32_t *surfaces, int threads,
+                  double sizeMin, double sizeMax, double lcGlob, double tolerance,
+                  double qualityMin, int optimize, int flags, const char *logpath,
+                  void **out)
 {
   HXTMesh *m = NULL;
   *out = NULL;
@@ -47,14 +53,27 @@ int pyhxt_tetmesh(uint32_t nv, const double *xyz, uint64_t ntri, const uint32_t 
   HXTStatus status = hxtMeshCreate(&m);
   if(status != HXT_STATUS_OK) goto done;
 
-  m->vertices.num = m->vertices.size = nv;
-  if((status = hxtAlignedMalloc(&m->vertices.coord, 4 * (size_t)nv * sizeof(double))))
+  pyhxt_flags = flags;
+  m->vertices.num = m->vertices.size = nv + nseed;
+  if((status = hxtAlignedMalloc(&m->vertices.coord,
+                                4 * ((size_t)nv + nseed) * sizeof(double))))
     goto done;
-  for(uint32_t i = 0; i < nv; i++) {
-    m->vertices.coord[4 * i + 0] = xyz[3 * i + 0];
-    m->vertices.coord[4 * i + 1] = xyz[3 * i + 1];
-    m->vertices.coord[4 * i + 2] = xyz[3 * i + 2];
+  for(uint32_t i = 0; i < nv + nseed; i++) {
+    const double *x = i < nv ? xyz + 3 * (size_t)i : seeds + 3 * (size_t)(i - nv);
+    m->vertices.coord[4 * i + 0] = x[0];
+    m->vertices.coord[4 * i + 1] = x[1];
+    m->vertices.coord[4 * i + 2] = x[2];
     m->vertices.coord[4 * i + 3] = 0.0;
+  }
+  if(nseed) {
+    m->points.num = m->points.size = nseed;
+    if((status = hxtAlignedMalloc(&m->points.node, nseed * sizeof(uint32_t))) ||
+       (status = hxtAlignedMalloc(&m->points.color, nseed * sizeof(uint32_t))))
+      goto done;
+    for(uint32_t i = 0; i < nseed; i++) {
+      m->points.node[i] = nv + i;
+      m->points.color[i] = 0;
+    }
   }
   m->triangles.num = m->triangles.size = ntri;
   if((status = hxtAlignedMalloc(&m->triangles.node, 3 * ntri * sizeof(uint32_t))) ||
@@ -81,7 +100,7 @@ int pyhxt_tetmesh(uint32_t nv, const double *xyz, uint64_t ntri, const uint32_t 
 
   HXTTetMeshOptions options = {
     threads, threads, threads, // default, Delaunay and improvement threads
-    1, // reproducible
+    !(flags & PYHXT_NONREPRODUCIBLE), // reproducible
     1, // verbosity, as gmsh's at General.Verbosity 5
     1, // stat
     1, // refine
@@ -92,6 +111,7 @@ int pyhxt_tetmesh(uint32_t nv, const double *xyz, uint64_t ntri, const uint32_t 
   status = hxtTetMesh(m, &options);
 
 done:
+  pyhxt_flags = 0;
   if(status == HXT_STATUS_OK)
     *out = m;
   else if(m)
@@ -125,4 +145,12 @@ void pyhxt_free(void *mesh)
 {
   HXTMesh *m = mesh;
   if(m) hxtMeshDelete(&m);
+}
+
+/* colors: ntri, the surface number of each of HXT's triangles */
+void pyhxt_copy_triangle_colors(void *mesh, uint32_t *colors)
+{
+  HXTMesh *m = mesh;
+  for(uint64_t i = 0; i < m->triangles.num; i++)
+    colors[i] = m->triangles.color ? m->triangles.color[i] : 0;
 }

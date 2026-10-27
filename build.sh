@@ -9,7 +9,7 @@ set -eu
 CC=${1:-gcc}; CXX=${2:-g++}
 HERE=$(cd "$(dirname "$0")" && pwd)
 H=$HERE/gmsh-4.13.1/contrib/hxt
-INC="-I$H/core/include -I$H/core/src -I$H/predicates/include -I$H/predicates/src -I$H/tetBR/include -I$H/tetBR/src -I$H/tetMesh/include -I$H/tetMesh/src"
+INC="-I$HERE -I$H/core/include -I$H/core/src -I$H/predicates/include -I$H/predicates/src -I$H/tetBR/include -I$H/tetBR/src -I$H/tetMesh/include -I$H/tetMesh/src"
 CFLAGS="-O2 -DNDEBUG -fPIC -fopenmp -ffp-contract=off -DHXT_WITHOUT_GMSH"
 OBJ=$(mktemp -d); trap 'rm -rf "$OBJ"' EXIT
 pids=()

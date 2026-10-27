@@ -14938,6 +14938,28 @@ void tetgenmesh::recoverboundary(clock_t& tv)
   misseglist = new arraypool(sizeof(face), 8);
   bdrysteinerptlist = new arraypool(sizeof(point), 8);
 
+  // pyhxt: bond the segments the mesh has already, in their own order, so that the
+  // random-order passes below only search for the missing ones
+  if (pyhxt_flags & PYHXT_PREBOND) {
+    triface pretet, prespin;
+    face preseg;
+    int t1ver;
+    subsegs->traversalinit();
+    preseg.sh = shellfacetraverse(subsegs);
+    while (preseg.sh != NULL) {
+      preseg.shver = 0;
+      if (getedge(sorg(preseg), sdest(preseg), &pretet)) {
+        sstbond1(preseg, pretet);
+        prespin = pretet;
+        do {
+          tssbond1(prespin, preseg);
+          fnextself(prespin);
+        } while (prespin.tet != pretet.tet);
+      }
+      preseg.sh = shellfacetraverse(subsegs);
+    }
+  }
+
   // In random order.
   subsegs->traversalinit();
   for (i = 0; i < subsegs->items; i++) {
@@ -15111,6 +15133,37 @@ void tetgenmesh::recoverboundary(clock_t& tv)
   checksubfaceflag = 1;
 
   misshlist = new arraypool(sizeof(face), 8);
+
+  // pyhxt: bond the subfaces the mesh has already, in their own order
+  if (pyhxt_flags & PYHXT_PREBOND) {
+    triface pretet, prespin;
+    face presh;
+    point pa, pb, pc;
+    int t1ver;
+    subfaces->traversalinit();
+    presh.sh = shellfacetraverse(subfaces);
+    while (presh.sh != NULL) {
+      presh.shver = 0;
+      stpivot(presh, prespin);
+      if (prespin.tet == NULL) {
+        pa = sorg(presh); pb = sdest(presh); pc = sapex(presh);
+        if (getedge(pa, pb, &pretet)) {
+          prespin = pretet;
+          do {
+            if (apex(prespin) == pc) {
+              tsbond(prespin, presh);
+              fsymself(prespin);
+              sesymself(presh);
+              tsbond(prespin, presh);
+              break;
+            }
+            fnextself(prespin);
+          } while (prespin.tet != pretet.tet);
+        }
+      }
+      presh.sh = shellfacetraverse(subfaces);
+    }
+  }
 
   // Randomly order the subfaces.
   subfaces->traversalinit();

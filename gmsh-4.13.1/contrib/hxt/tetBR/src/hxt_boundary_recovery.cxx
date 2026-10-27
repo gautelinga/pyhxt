@@ -3,6 +3,7 @@ extern "C" {
 #include "hxt_tools.h"
 #include "hxt_omp.h"
 #include "predicates.h"
+#include "pyhxt_flags.h"  // pyhxt
 }
 
 #include <assert.h>
@@ -398,8 +399,10 @@ int tetgenmesh::reconstructmesh(void *p, double tol){
 
 // TODO: is this usefull ?
 #if 1
+  if (!(pyhxt_flags & PYHXT_NO_RECOVER_DELAUNAY)) {  // pyhxt
   HXT_INFO("Recover Delaunay");
   recoverdelaunay();
+  }
 #endif
   //  printf("Optimize final mesh\n");
   //  optimizemesh();

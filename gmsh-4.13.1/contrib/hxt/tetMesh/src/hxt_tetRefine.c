@@ -10,6 +10,7 @@
 #include "predicates.h"
 #include "hxt_tetFlag.h"
 #include "hxt_sort.h"
+#include "pyhxt_flags.h"  // pyhxt
 #include "hxt_tetNodalSize.h"
 
 // mark all the points which are in mesh->(points | lines | triangles)
@@ -61,6 +62,39 @@ HXTStatus hxtEmptyMesh(HXTMesh* mesh, HXTDelaunayOptions* delOptions)
   }
 
   delOptions->perfectDelaunay = 1;
+  if ((pyhxt_flags & PYHXT_SEEDS_FIRST) && mesh->points.num) {
+    // pyhxt: the embedded points first, then the rest
+    uint8_t* seed;
+    HXT_CHECK( hxtCalloc(&seed, mesh->vertices.num, sizeof(uint8_t)) );
+    for (uint64_t k=0; k<mesh->points.num; k++)
+      seed[mesh->points.node[k]] = 1;
+    uint32_t nfirst = 0;
+    for (uint32_t i=0; i<numToInsert; i++) {
+      if (seed[nodeInfo[i].node]) {
+        HXTNodeInfo t = nodeInfo[nfirst];
+        nodeInfo[nfirst++] = nodeInfo[i];
+        nodeInfo[i] = t;
+      }
+    }
+    HXT_CHECK( hxtFree(&seed) );
+    // and up to 16 surface points spread over the rest, so that the first batch has four
+    // that are not coplanar to start from, however few seeds there are
+    uint32_t pad = numToInsert - nfirst < 16 ? numToInsert - nfirst : 16;
+    for (uint32_t p=0; p<pad; p++) {
+      uint32_t i = nfirst + p + (uint32_t) ((uint64_t) p * (numToInsert - nfirst - pad) / pad);
+      HXTNodeInfo t = nodeInfo[nfirst + p];
+      nodeInfo[nfirst + p] = nodeInfo[i];
+      nodeInfo[i] = t;
+    }
+    nfirst += pad;
+    // hxtDelaunaySteadyVertices lowers the number of threads for a few points
+    int threads = delOptions->delaunayThreads;
+    HXT_CHECK( hxtDelaunaySteadyVertices(mesh, delOptions, nodeInfo, nfirst) );
+    delOptions->delaunayThreads = threads;
+    HXT_CHECK( hxtDelaunaySteadyVertices(mesh, delOptions, nodeInfo + nfirst,
+                                         numToInsert - nfirst) );
+  }
+  else
   HXT_CHECK( hxtDelaunaySteadyVertices(mesh, delOptions, nodeInfo, numToInsert) );
   delOptions->perfectDelaunay = 0;
 
