@@ -9,9 +9,8 @@ import numpy as np
 ABI = 3
 
 # pyhxt_flags.h
-PREBOND, NO_RECOVER_DELAUNAY, SEEDS_FIRST, NONREPRODUCIBLE = 1, 2, 4, 8
-CHECK_CENTRES, SMALL_MESH_THREADS = 16, 32
-FAST = PREBOND | NO_RECOVER_DELAUNAY | SEEDS_FIRST | SMALL_MESH_THREADS
+PREBOND, NO_RECOVER_DELAUNAY, SEEDS_FIRST, NONREPRODUCIBLE, CHECK_CENTRES = 1, 2, 4, 8, 16
+FAST = PREBOND | NO_RECOVER_DELAUNAY | SEEDS_FIRST
 
 #: int field(double *pts, uint64_t n): pts is n x 4 (x, y, z, size); return 0 for success
 FIELD = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.POINTER(ctypes.c_double), ctypes.c_uint64)

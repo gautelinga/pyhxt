@@ -1058,6 +1058,15 @@ static HXTStatus insertion(HXT2Sync* shared2sync,
   }
 
 
+  // pyhxt: reshaping the cavity can leave none (a point coplanar with the faces around it,
+  // as on a surface made of a regular grid); filling an empty cavity aborted HXT (gmsh
+  // 4.13.1's too), so such a point is skipped, as the size filter skips one
+  if(local->ball.num == 0 || local->deleted.num == prevDeleted) {
+    HXT_INFO("skipping a point with an empty cavity (%u)", vta);
+    restoreDeleted(mesh, local, prevDeleted);
+    return HXT_STATUS_FALSE;
+  }
+
   if(local->ball.num > local->deleted.num){
     HXT_CHECK( createNewDeleted(shared2sync, &local->deleted, local->ball.num) );
     HXT_ASSERT(local->deleted.num >= local->ball.num);

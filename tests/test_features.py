@@ -105,3 +105,22 @@ def test_trimesh_in():
     trimesh = pytest.importorskip('trimesh')
     m = pyhxt.tetrahedralize(trimesh.creation.icosphere(subdivisions=2), threads=2)
     assert len(m.tets) > 0
+
+
+@pytest.mark.parametrize('fast', [True, False])
+def test_a_grid_surface_does_not_abort(fast):
+    """A box whose faces are a 10 x 10 grid, meshed at 0.05: a refinement point got an empty
+    cavity, and HXT (gmsh 4.13.1's too) aborted. pyhxt skips such a point."""
+    m = pyhxt.tetrahedralize(*shapes.box(n=10), size=.05, fast=fast, threads=1)
+    assert volume(m.points, m.tets).sum() == pytest.approx(1, rel=1e-12)
+
+
+def test_many_threads_on_a_small_mesh():
+    """The same failure, seen as a crash in the optimiser on 16 threads."""
+    m = pyhxt.tetrahedralize(*shapes.combine(shapes.box(n=4), shapes.sphere(
+        (.5, .5, .5), .3, subdivisions=4, marker=2)), holes=[(.5, .5, .5)], size=.05,
+        threads=16)
+    p, t, mk = shapes.sphere((.5, .5, .5), .3, subdivisions=4)
+    a, b, c = (p[t[:, k]] for k in range(3))
+    ball = abs(np.einsum('ij,ij->', a, np.cross(b, c))) / 6
+    assert volume(m.points, m.tets).sum() == pytest.approx(1 - ball, rel=1e-12)

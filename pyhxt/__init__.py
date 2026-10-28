@@ -109,7 +109,7 @@ def tetrahedralize(points, triangles=None, markers=None, *, volumes=None, holes=
         if len(sizes) != len(points):
             raise ValueError('one point size per point')
     flags = (_lib.FAST if fast else 0) | (0 if reproducible else _lib.NONREPRODUCIBLE)
-    flags |= _lib.CHECK_CENTRES
+    flags |= _lib.CHECK_CENTRES   # always: a guard against HXT crashing (README)
     if size and len(triangles):
         edges = np.linalg.norm(points[triangles] - points[np.roll(triangles, 1, axis=1)],
                                axis=2)
@@ -118,8 +118,8 @@ def tetrahedralize(points, triangles=None, markers=None, *, volumes=None, holes=
             logger.warning(
                 f'the surface is much coarser than the size asked for (its longer edges '
                 f'are {coarse:.3g}, the size {size:.3g}): HXT does not split surface '
-                f'triangles, and can fail on such a surface (gmsh 4.13.1 crashes on some '
-                f'too). A surface made at about the size is safer.')
+                f'triangles, so the tets next to them are shaped by them. A surface made '
+                f'at about the size gives better tets there.')
     lc = float(np.linalg.norm(points.max(0) - points.min(0)))
 
     messages, failure = [], []

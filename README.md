@@ -110,11 +110,9 @@ Small meshes take well under a second (`examples/01_quickstart.py`: 56 thousand 
 
 ## Good to know
 
-- **The surface must be closed and should not be much coarser than the size you ask for.**
-  HXT never splits a surface triangle; if you ask for tets far smaller than the surface's
-  triangles, it can fail, and on some such surfaces it crashes (gmsh 4.13.1 crashes on the
-  same input). pyhxt warns when the surface is much coarser than `size`. Make the surface
-  at about the size you want.
+- **The surface must be closed, and is best made at about the size you ask for.** HXT never
+  splits a surface triangle, so the tets next to a large surface triangle are shaped by it.
+  pyhxt warns when the surface is much coarser than `size`.
 - **Repeatability.** The same input on the same number of threads gives the same mesh
   (`reproducible=True`). Turning that off is faster for large meshes (about 15% at 50
   million tets), but every run then gives a different mesh.
@@ -142,9 +140,16 @@ With `fast=True` (the default) three changes make large meshes faster:
 3. **No global Delaunay pass** after the boundary is recovered (the mesh quality after
    optimisation was the same).
 
-At 53 million tets these took HXT from 108 to 57 seconds. pyhxt also skips refinement
-points that fall outside their tetrahedron, and limits the optimiser to one thread per
-100,000 tets, both against HXT failures on small or awkward meshes.
+At 53 million tets these took HXT from 108 to 57 seconds.
+
+pyhxt also fixes a crash HXT has in gmsh 4.13.1 too: on some surfaces (a box whose faces are
+a regular grid of 10 x 10 squares, meshed at a size of 0.05, is the smallest found), a point
+added during refinement could end up with no cavity, and filling it aborted the program.
+Such a point is now skipped, as HXT skips a point that is too close to others; any surface
+gmsh meshes gets the same mesh as before. A second guard keeps refinement points inside the
+tetrahedron that made them (HXT means them to be, but on some surfaces they were not, and
+its parallel optimisation later crashed on the result); it is always on in the Python API,
+so there `fast=False` is HXT as gmsh runs it plus this check.
 
 With `fast=False`, HXT runs as gmsh runs it. Through the C interface with no switches at
 all, the mesh is gmsh's to the bit: mesh-sphere-packing checks this against gmsh 4.13.1 on

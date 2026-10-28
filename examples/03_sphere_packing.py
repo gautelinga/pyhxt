@@ -3,8 +3,8 @@
 Every sphere is a hole. Its points all lie on one sphere, which makes the first Delaunay
 mesh inside it degenerate and slow; the hole point inside each one, inserted first, avoids
 that, and pyhxt's boundary recovery is faster too (fast=True, the default; fast=False runs
-HXT as gmsh does). At this size the two take about as long in all; the stages printed show
-where they differ. On sphere packings of 50 M tets and more, the fast mode halved the time.
+HXT as gmsh does). The stages printed show where they differ; on sphere packings of 50 M
+tets and more, the fast mode halved the time.
 
     python 03_sphere_packing.py [number of spheres]
 """
