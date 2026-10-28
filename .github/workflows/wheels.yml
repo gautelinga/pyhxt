@@ -23,6 +23,10 @@ jobs:
           # one build per architecture: the wheel is py3-none
           CIBW_BUILD: "cp312-manylinux_${{ matrix.arch }}"
           CIBW_ARCHS_LINUX: ${{ matrix.arch }}
+          # glibc 2.28 (2018 on): numpy has no wheels for manylinux2014 any more, and building
+          # it there for the tests fails (gcc 10.2)
+          CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
+          CIBW_MANYLINUX_AARCH64_IMAGE: manylinux_2_28
           CIBW_TEST_REQUIRES: pytest meshio
           CIBW_TEST_COMMAND: >
             pytest -q {project}/tests &&
