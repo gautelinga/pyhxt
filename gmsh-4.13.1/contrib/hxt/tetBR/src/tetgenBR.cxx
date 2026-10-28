@@ -14944,11 +14944,44 @@ void tetgenmesh::recoverboundary(clock_t& tv)
     triface pretet, prespin;
     face preseg;
     int t1ver;
+    // first through each surface triangle's tet (HXT's map): any tet holding an edge is
+    // one to bond its segment to
+    if (!pyhxt_tri_tet.empty()) {
+      face presh;
+      uint64_t k = 0;
+      subfaces->traversalinit();
+      presh.sh = shellfacetraverse(subfaces);
+      while (presh.sh != NULL) {
+        tetrahedron* T = k < pyhxt_tri_tet.size() ? pyhxt_tri_tet[k] : NULL;
+        k++;
+        presh.shver = 0;
+        for (int e = 0; T != NULL && e < 3; e++, senextself(presh)) {
+          sspivot(presh, preseg);
+          if (preseg.sh == NULL) continue;
+          sstpivot1(preseg, pretet);
+          if (pretet.tet != NULL) continue;
+          point a = sorg(preseg), b = sdest(preseg);
+          pretet.tet = T;
+          for (pretet.ver = 0; pretet.ver < 12; pretet.ver++)
+            if (org(pretet) == a && dest(pretet) == b) break;
+          if (pretet.ver == 12) continue;
+          sstbond1(preseg, pretet);
+          prespin = pretet;
+          do {
+            tssbond1(prespin, preseg);
+            fnextself(prespin);
+          } while (prespin.tet != pretet.tet);
+        }
+        presh.sh = shellfacetraverse(subfaces);
+      }
+    }
+    // then by search, for the rest (the edges of missing triangles)
     subsegs->traversalinit();
     preseg.sh = shellfacetraverse(subsegs);
     while (preseg.sh != NULL) {
       preseg.shver = 0;
-      if (getedge(sorg(preseg), sdest(preseg), &pretet)) {
+      sstpivot1(preseg, pretet);
+      if (pretet.tet == NULL && getedge(sorg(preseg), sdest(preseg), &pretet)) {
         sstbond1(preseg, pretet);
         prespin = pretet;
         do {
@@ -15140,6 +15173,48 @@ void tetgenmesh::recoverboundary(clock_t& tv)
     face presh;
     point pa, pb, pc;
     int t1ver;
+    // first through each surface triangle's tet (HXT's map), if the segment recovery's
+    // flips left it alive and holding the face; the face seen from pa, pb, pc is in that
+    // tet or in its neighbour across it
+    if (!pyhxt_tri_tet.empty()) {
+      uint64_t k = 0;
+      subfaces->traversalinit();
+      presh.sh = shellfacetraverse(subfaces);
+      while (presh.sh != NULL) {
+        tetrahedron* T = k < pyhxt_tri_tet.size() ? pyhxt_tri_tet[k] : NULL;
+        k++;
+        presh.shver = 0;
+        stpivot(presh, prespin);
+        pretet.tet = T;
+        if (T != NULL && prespin.tet == NULL && !isdeadtet(pretet)) {
+          pa = sorg(presh); pb = sdest(presh); pc = sapex(presh);
+          int found = 0;
+          for (int side = 0; side < 2 && !found; side++) {
+            for (pretet.ver = 0; pretet.ver < 12; pretet.ver++) {
+              if (org(pretet) == pa && dest(pretet) == pb && apex(pretet) == pc) {
+                found = 1;
+                break;
+              }
+            }
+            if (found || side) break;
+            // the face the other way round: its other side is the neighbour's
+            for (pretet.ver = 0; pretet.ver < 12; pretet.ver++)
+              if (org(pretet) == pb && dest(pretet) == pa && apex(pretet) == pc) break;
+            if (pretet.ver == 12) break;
+            fsymself(pretet);
+            if (isdeadtet(pretet)) break;
+          }
+          if (found) {
+            tsbond(pretet, presh);
+            fsymself(pretet);
+            sesymself(presh);
+            tsbond(pretet, presh);
+          }
+        }
+        presh.sh = shellfacetraverse(subfaces);
+      }
+    }
+    // then by search, for the rest
     subfaces->traversalinit();
     presh.sh = shellfacetraverse(subfaces);
     while (presh.sh != NULL) {

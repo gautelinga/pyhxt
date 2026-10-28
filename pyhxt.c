@@ -9,6 +9,7 @@
 
 int pyhxt_flags = 0;
 uint32_t pyhxt_hole_first = 0, pyhxt_num_holes = 0;
+uint64_t* pyhxt_tri2tet = NULL;
 static FILE *logfile = NULL;
 
 static HXTStatus messageCallback(HXTMessage *msg)

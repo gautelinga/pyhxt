@@ -130,7 +130,10 @@ HXTStatus hxtTetMesh(HXTMesh* mesh,
                nbMissingLines);
 
     uint32_t oldNumVertices = mesh->vertices.num;
-    HXT_CHECK( hxt_boundary_recovery(mesh, options->toleranceInitialDelaunay) );
+    pyhxt_tri2tet = tri2TetMap;  // pyhxt
+    HXTStatus brStatus = hxt_boundary_recovery(mesh, options->toleranceInitialDelaunay);
+    pyhxt_tri2tet = NULL;
+    HXT_CHECK( brStatus );
 
     if(oldNumVertices < mesh->vertices.num) {
       HXT_INFO("Steiner(s) point(s) were inserted");

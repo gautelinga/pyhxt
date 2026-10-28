@@ -10,6 +10,10 @@ extern int pyhxt_flags;
 /* the hole points: vertices pyhxt_hole_first ... + pyhxt_num_holes - 1; the volumes holding
  * them are made exterior right after HXT colours its volumes, so not refined or output */
 extern uint32_t pyhxt_hole_first, pyhxt_num_holes;
+/* HXT's triangle-to-tet map (4 tet + facet, or HXT_NO_ADJACENT for a missing triangle),
+ * set while boundary recovery runs, so that PYHXT_PREBOND finds each surface triangle's
+ * tet without a search */
+extern uint64_t* pyhxt_tri2tet;
 #ifdef __cplusplus
 }
 #endif

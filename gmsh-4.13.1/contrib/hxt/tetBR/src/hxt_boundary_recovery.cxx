@@ -77,6 +77,8 @@ static double orient4d(double*, double *, double *, double *, double *,
 #ifdef HXT_WITHOUT_GMSH
 #warning "Using TetgenBR without Gmsh - please note the different licensing terms"
 #include "tetgenBR.h"
+// pyhxt: each surface triangle's tet, from HXT's triangle-to-tet map, for PYHXT_PREBOND
+static std::vector<tetgenmesh::tetrahedron*> pyhxt_tri_tet;
 #include "tetgenBR.cxx"
 #else
 #include "../../../../src/mesh/tetgenBR.h"
@@ -238,6 +240,15 @@ int tetgenmesh::reconstructmesh(void *p, double tol){
           bond(tf1,tf2);
         }
       }
+    }
+
+    // pyhxt: each surface triangle's tet, in the order the subfaces are made below
+    pyhxt_tri_tet.clear();
+    if ((pyhxt_flags & PYHXT_PREBOND) && pyhxt_tri2tet != NULL) {
+      pyhxt_tri_tet.assign(mesh->triangles.num, NULL);
+      for (uint64_t i = 0; i < mesh->triangles.num; i++)
+        if (pyhxt_tri2tet[i] != HXT_NO_ADJACENT)
+          pyhxt_tri_tet[i] = ts[pyhxt_tri2tet[i] / 4].tet;
     }
   }
 
