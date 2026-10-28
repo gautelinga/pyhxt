@@ -15,7 +15,7 @@ from pyhxt import _lib
 from pyhxt._surface import surface
 from pyhxt.mesh import Mesh
 
-__version__ = '0.3.0'
+__version__ = '0.3.1'
 __all__ = ['HXTError', 'Mesh', 'library', 'tetrahedralize']
 
 logger = logging.getLogger('pyhxt')
