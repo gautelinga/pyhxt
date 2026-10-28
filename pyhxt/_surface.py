@@ -15,7 +15,7 @@ def surface(obj, markers='markers'):
         if not obj.is_all_triangles:
             obj = obj.triangulate()
         tri = np.asarray(obj.faces).reshape(-1, 4)[:, 1:]
-        data = obj.cell_data[markers] if markers in obj.cell_data else None
+        data = obj.cell_data.get(markers)
         return np.asarray(obj.points), tri, data
     if hasattr(obj, 'vertices') and hasattr(obj, 'faces'):          # trimesh
         return np.asarray(obj.vertices), np.asarray(obj.faces), None

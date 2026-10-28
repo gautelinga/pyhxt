@@ -52,8 +52,8 @@ def mesh_cube(flags, seeds):
     assert abs(total - 1) < 1e-12, total
     # the mesh itself, to compare builds: a compiler or libm that rounds differently shows
     digest = hashlib.sha256(bytes(X) + bytes(T) + bytes(col)).hexdigest()[:16]
-    print('OK (flags {}, {} seeds): {} vertices, {} tets, volume {!r}, sha256 {}'.format(
-        flags, len(seeds) // 3, nv.value, len(tets), total, digest))
+    print(f'OK (flags {flags}, {len(seeds) // 3} seeds): {nv.value} vertices, '
+          f'{len(tets)} tets, volume {total!r}, sha256 {digest}')
 
 
 mesh_cube(0, [])

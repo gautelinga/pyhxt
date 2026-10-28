@@ -35,7 +35,7 @@ class PlatformWheel(bdist_wheel):
         self.root_is_pure = False
 
     def get_tag(self):
-        return ('py3', 'none') + super().get_tag()[2:]
+        return ('py3', 'none', *super().get_tag()[2:])
 
 
 setup(cmdclass={'build_py': BuildLibrary, 'bdist_wheel': PlatformWheel},

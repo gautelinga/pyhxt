@@ -1,178 +1,131 @@
 # pyhxt
 
-**Fast, multi-threaded tetrahedral meshing of closed surfaces, from Python.**
+Fast, multi-threaded tetrahedral meshing of closed surfaces, from Python.
 
-You give pyhxt a closed triangle surface (a box, a part, a pack of spheres, anything
-watertight) and it fills the inside with tetrahedra. The surface comes back exactly as you
-gave it: no point moved, no triangle split. Under the hood is HXT, the parallel mesher
-from the gmsh project, used here on its own and made faster still for large meshes.
+pyhxt fills a closed triangle surface with tetrahedra using HXT, the parallel Delaunay
+mesher from [gmsh](https://gmsh.info), built on its own. Your surface is kept exactly: no
+point is moved and no triangle is split.
 
 ```python
 import pyhxt
 from pyhxt import shapes
 
+# a unit box with a ball inside it
 points, triangles, markers = shapes.combine(
-    shapes.box(n=20),                                        # a unit box ...
-    shapes.sphere(centre=(.5, .5, .5), radius=.3, subdivisions=4, marker=2))  # ... with a ball
+    shapes.box(n=20),
+    shapes.sphere(centre=(.5, .5, .5), radius=.3, subdivisions=4, marker=2))
 
 mesh = pyhxt.tetrahedralize(points, triangles, markers, holes=[(.5, .5, .5)], size=.05)
-print(mesh)              # Mesh(11573 points, 56256 tets in 1 volumes, 9920 boundary triangles)
-mesh.write('box.vtu')    # open it in ParaView (needs meshio)
+print(mesh.report())     # points, tets, volumes and dihedral angles
+mesh.write('box.vtu')    # needs meshio
 ```
-
-It is a young library (0.2), Linux only for now.
 
 ## Install
 
     pip install git+https://github.com/gautelinga/pyhxt
 
-This compiles the mesher (about 10 seconds; it needs gcc, g++ and OpenMP, which a normal
-Linux setup has). numpy is the only dependency. For reading and writing mesh files, also
-install meshio (`pip install "pyhxt[meshio]"`); pyvista and trimesh surfaces work too if
-you have them.
+This compiles the mesher, which takes about 10 seconds and needs gcc, g++ and OpenMP. pyhxt
+runs on Linux only. numpy is its only dependency. To read and write mesh files, install
+meshio too: `pip install "pyhxt[meshio]"`.
 
-## What it does
+## Command line
 
-**Keeps your surface.** The first points of `mesh.points` are your points, in your order;
-the boundary triangles are yours, with your markers on them (`mesh.markers`). Nothing is
-added on the surface, so two meshes made on matching surfaces fit together, and periodic
-faces stay periodic.
+    pyhxt part.stl part.vtu --size 0.05
+    pyhxt shell.stl shell.vtu --hole 0 0 0 --boundary shell_boundary.vtu --threads 8
 
-**Holes and regions.** A closed surface inside another one is either a hole or a second
-material:
+Any surface format meshio reads goes in, and any volume format it writes comes out. The
+command prints a short report on the mesh. `pyhxt --help` lists the options, which match
+the ones below.
 
-```python
-mesh = pyhxt.tetrahedralize(points, triangles, markers, holes=[(.5, .5, .5)])   # leave it empty
-mesh = pyhxt.tetrahedralize(points, triangles, markers,                        # or label both
-                            regions={1: (.05, .05, .05), 2: (.5, .5, .5)})
-mesh.volume              # 1 or 2 for every tet
-```
+## Usage
 
-**Mesh size.** By default the tets take their size from the surface's triangles. You can
-bound it everywhere (`size=`), set it at the surface points (`point_sizes=`), or give a
-function of position, which is called in batches as the mesh is refined:
+`pyhxt.tetrahedralize(points, triangles, markers=None, **options)` returns a `Mesh`.
 
-```python
-def size(x):                       # x: an (N, 3) array of points
-    return .01 + .5 * abs(np.linalg.norm(x - centre, axis=1) - radius)   # finer near the ball
+**Input:** `points` (n, 3) and `triangles` (m, 3), or a meshio, pyvista or trimesh surface
+in place of both.
+- Each closed surface may face either way.
+- `markers` (m,) are optional positive integers, one per triangle. They stay on the
+  boundary triangles of the result.
 
-mesh = pyhxt.tetrahedralize(points, triangles, markers, size_field=size)
-```
+| option | |
+|---|---|
+| `size`, `size_min` | largest and smallest edge length (default: taken from the surface) |
+| `point_sizes` | the target size at each input point |
+| `size_field` | a function of an (N, 3) array of points that returns N sizes; it is called during refinement |
+| `holes` | points inside regions to leave empty |
+| `regions` | `{label: point}`: each tet gets the label of the region it lies in, in `mesh.volume` |
+| `volumes` | which volumes to mesh, each given as the markers of the surfaces around it |
+| `seeds` | points inserted before the surface. One inside each closed surface whose points all lie on a sphere makes the first step much faster |
+| `threads` | 0 (the default) uses every core |
+| `quality` | tets below this quality are improved (default 0.3, as in gmsh); `optimize=False` skips the improvement |
+| `reproducible` | by default, the same input on the same number of threads gives the same mesh; `False` is about 15% faster on large meshes |
+| `fast` | pyhxt's faster boundary recovery (the default); `False` runs HXT as gmsh does |
+| `log` | a file for HXT's messages |
 
-**Other libraries.** Pass a meshio, pyvista or trimesh surface instead of arrays, and get
-the result back as one of them:
+**The result:**
+- `mesh.points`: the vertices, with your points first and in your order;
+- `mesh.tets`: the tetrahedra;
+- `mesh.volume`: the volume or region label of each tet;
+- `mesh.triangles` and `mesh.markers`: the boundary;
+- `mesh.info`: counts and the time each stage took.
 
-```python
-mesh = pyhxt.tetrahedralize(meshio.read('part.stl'))
-mesh.to_meshio(), mesh.to_pyvista(), mesh.write('part.vtu')
-```
+To check the result, `mesh.report()` gives a few lines: the size, each volume, and the
+dihedral angles, with how many tets are close to flat. `mesh.cell_volumes()` and
+`mesh.dihedral_angles()` give the numbers per tet.
 
-**What happened.** `mesh.info` has the counts and how long each stage took; HXT's own
-messages go to the Python logger `"pyhxt"`; if HXT cannot mesh the surface, you get a
-`pyhxt.HXTError` with its message.
+To use another library, call `mesh.to_meshio()` or `mesh.to_pyvista()`, or `mesh.write(path)` to
+save a file. If HXT can't mesh the surface, you get a `pyhxt.HXTError`; HXT's messages also go to
+the `pyhxt` logger.
 
-## Examples
-
-In [`examples/`](examples):
-
-1. [`01_quickstart.py`](examples/01_quickstart.py): a box with a spherical hole, written
-   to a `.vtu` file.
-2. [`02_regions_and_sizes.py`](examples/02_regions_and_sizes.py): two labelled materials
-   and a size field that refines near the interface.
-3. [`03_sphere_packing.py`](examples/03_sphere_packing.py): the space between 60 spheres,
-   with the time each stage takes.
-4. [`04_from_a_file.py`](examples/04_from_a_file.py): an STL file in, a `.vtu` out.
-
-## How fast
-
-pyhxt was built for very large meshes of sphere packings (the pore space of a random close
-packing of 100 beads, for flow simulations). On one node with 56 threads (Intel Xeon Gold
-6254), in mesh-sphere-packing:
-
-| tets | pyhxt's meshing | the whole build (surfaces, checks, file) | memory |
-|---|---|---|---|
-| 53 million | 30 s | 1 min | 5 GB |
-| 424 million | 3 min | 6 min | 37 GB |
-| 1.19 billion | 7 min | 14 min | 101 GB |
-
-Small meshes take well under a second (`examples/01_quickstart.py`: 56 thousand tets in
-0.5 s on a laptop).
-
-## Compared with other meshers
-
-- **TetGen** (in Python: `tetgen`, MeshPy) also keeps the surface, and bounds tet volumes
-  and shapes. It runs on one thread, so large meshes take much longer.
-- **gmsh** contains HXT, and pyhxt's `fast=False` runs it the same way, but gmsh's model
-  costs time of its own: for 56 million tets, half of gmsh's meshing time was spent
-  outside HXT.
-- **fTetWild** (`pytetwild`) meshes broken, self-intersecting surfaces robustly, but
-  moves the surface within a tolerance instead of keeping it.
+Examples, in [`examples/`](examples):
+- a box with a hole;
+- two labelled regions with a size field;
+- the space between many spheres;
+- an STL file in and a `.vtu` file out.
 
 ## Good to know
 
-- **The surface must be closed, and is best made at about the size you ask for.** HXT never
-  splits a surface triangle, so the tets next to a large surface triangle are shaped by it.
-  pyhxt warns when the surface is much coarser than `size`.
-- **Repeatability.** The same input on the same number of threads gives the same mesh
-  (`reproducible=True`). Turning that off is faster for large meshes (about 15% at 50
-  million tets), but every run then gives a different mesh.
-- **Threads.** `threads=0` (the default) uses every core.
-- **Quality.** HXT improves tets below a quality threshold (`quality=0.3` by default);
-  unlike TetGen it has no hard bound on angles. In the sphere-packing meshes above, after
-  mesh-sphere-packing's own pass over the flattest tets, the smallest dihedral angles were
-  5-9 degrees.
+- **The surface is checked first.** A gap in the surface, repeated points and degenerate
+  triangles are reported as such, rather than as an HXT error. A surface may have inner walls
+  (two regions sharing a face): give the shared triangles once.
+
+- **Make the surface at about the size you want.** HXT never splits surface triangles, so a
+  large one shapes the tets next to it. pyhxt warns when the surface is much coarser than `size`.
+- **Angles.** HXT improves poor tets but, unlike TetGen, guarantees no angle bound.
+- **Speed.** Small meshes take well under a second. A 1.2-billion-tet mesh took HXT 7
+  minutes on 56 cores and about 100 GB of memory.
+- **Other meshers.**
+  - TetGen also keeps the surface, but runs on one thread.
+  - fTetWild copes with broken surfaces, but moves them.
+  - gmsh contains HXT; pyhxt skips gmsh's geometry model and its overhead.
 
 ## How it works
 
-pyhxt compiles HXT's tetrahedral mesher from gmsh 4.13.1's sources (the subset in
-[`gmsh-4.13.1/`](gmsh-4.13.1), unchanged apart from the switches below) into
-`libpyhxt.so`, and calls it with ctypes on numpy arrays.
+pyhxt compiles HXT from gmsh 4.13.1's sources (in [`gmsh-4.13.1/`](gmsh-4.13.1); every change is
+marked `pyhxt:`) into `libpyhxt.so`, and calls it with ctypes.
 
-With `fast=True` (the default) three changes make large meshes faster:
+- **`fast=True`** makes three changes:
+  - surface triangles already in the first Delaunay mesh are attached directly rather than
+    searched for;
+  - seeds go in first;
+  - the global Delaunay pass after boundary recovery is skipped.
+- **Crash fixes.** pyhxt fixes two crashes that HXT has in gmsh 4.13.1: a refinement point
+  with an empty cavity, and refinement points outside the tet that made them.
+- **Exact mode.** With no switches, the C library gives gmsh's mesh, bit for bit.
 
-1. **Seeds first.** The points of a sphere all lie on one sphere, which makes the first
-   Delaunay mesh inside it degenerate, and every test there needs exact arithmetic. A point
-   inside each hole, inserted first, avoids it: on a welded sphere packing, the first mesh
-   took 1.3 s instead of 15.6 s.
-2. **Faster boundary recovery.** The surface edges and triangles that the first mesh already
-   has are attached directly, using the map HXT keeps, so TetGen's recovery code only
-   searches for the missing ones.
-3. **No global Delaunay pass** after the boundary is recovered (the mesh quality after
-   optimisation was the same).
+To develop:
 
-At 53 million tets these took HXT from 108 to 57 seconds.
-
-pyhxt also fixes a crash HXT has in gmsh 4.13.1 too: on some surfaces (a box whose faces are
-a regular grid of 10 x 10 squares, meshed at a size of 0.05, is the smallest found), a point
-added during refinement could end up with no cavity, and filling it aborted the program.
-Such a point is now skipped, as HXT skips a point that is too close to others; any surface
-gmsh meshes gets the same mesh as before. A second guard keeps refinement points inside the
-tetrahedron that made them (HXT means them to be, but on some surfaces they were not, and
-its parallel optimisation later crashed on the result); it is always on in the Python API,
-so there `fast=False` is HXT as gmsh runs it plus this check.
-
-With `fast=False`, HXT runs as gmsh runs it. Through the C interface with no switches at
-all, the mesh is gmsh's to the bit: mesh-sphere-packing checks this against gmsh 4.13.1 on
-meshes of up to 53 million tets. The switches are in [`pyhxt_flags.h`](pyhxt_flags.h), and
-every change to gmsh's files is marked `pyhxt:` in them.
-
-## Building from a clone
-
-    ./build.sh                  # libpyhxt.so in the clone; $CC and $CXX if not gcc/g++
+    ./build.sh                          # libpyhxt.so in the clone
     PYTHONPATH=. python -m pytest tests
-    python test.py              # the C library alone, standard library only
 
-The build uses `-ffp-contract=off`, so that compilers that fuse multiply-adds (gcc on
-ARM) give the same numbers, and so the same meshes, as on x86-64.
+Wheels for x86-64 and aarch64 Linux are built by the `wheels` workflow on `v*` tags.
 
-Wheels for x86-64 and aarch64 Linux are built by the `wheels` workflow (on a `v*` tag).
+## Licence and citation
 
-## Licence and credits
+pyhxt is under the GNU AGPL v3. HXT is by Célestin Marot, Jeanne Pellerin and Jean-François
+Remacle (GPL v2 or later). Its boundary recovery is Hang Si's TetGen code, which is under the
+AGPL v3 outside gmsh. If you use pyhxt, please cite HXT:
 
-pyhxt is under the GNU AGPL v3 (`LICENSE`). HXT is by Célestin Marot, Jeanne Pellerin and
-Jean-François Remacle, under the GPL v2 or later; its boundary recovery is TetGen's code
-(Hang Si), under the AGPL v3 outside gmsh. If you use pyhxt in research, please cite HXT:
-
-- C. Marot, J. Pellerin, J.-F. Remacle, *One machine, one minute, three billion
-  tetrahedra*, Int. J. Numer. Methods Eng. 117 (2019) 967-990.
+- C. Marot, J. Pellerin, J.-F. Remacle, *One machine, one minute, three billion tetrahedra*,
+  Int. J. Numer. Methods Eng. 117 (2019) 967–990.
 - C. Marot, J.-F. Remacle, *Quality tetrahedral mesh generation with HXT*, arXiv:2008.08508.

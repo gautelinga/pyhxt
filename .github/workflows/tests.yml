@@ -1,6 +1,11 @@
 name: tests
 on: [push, pull_request]
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pipx run ruff check .
   test:
     runs-on: ubuntu-latest
     strategy:

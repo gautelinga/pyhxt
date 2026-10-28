@@ -14,8 +14,7 @@ points, triangles, markers = shapes.combine(box, ball)
 mesh = pyhxt.tetrahedralize(points, triangles, markers,
                             holes=[(.5, .5, .5)], size=.05)
 
-print(mesh)
-print('took', round(mesh.info['seconds'], 2), 's on', mesh.info['threads'] or 'all', 'threads')
+print(mesh.report())   # size, volumes, and the dihedral angles: how good the tets are
 
 # the input surface is in the mesh unchanged: same points first, same triangles
 assert (mesh.points[:len(points)] == points).all()

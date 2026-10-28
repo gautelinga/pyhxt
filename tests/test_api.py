@@ -42,7 +42,7 @@ def test_cube_with_a_hole(fast, how):
     x = np.vstack([xo, xi])
     t = np.vstack([to, ti + 8])
     colors = np.repeat([1, 2], 12)
-    kw = dict(holes=[[0.5, 0.5, 0.5]]) if how == 'holes' else dict(volumes=[[1, 2]])
+    kw = {'holes': [[0.5, 0.5, 0.5]]} if how == 'holes' else {'volumes': [[1, 2]]}
     m = pyhxt.tetrahedralize(x, t, colors, size=0.1, threads=2, fast=fast, **kw)
     assert volume(m.points, m.tets) == pytest.approx(1 - 0.2 ** 3, rel=1e-12)
     assert np.array_equal(m.points[:16], x)

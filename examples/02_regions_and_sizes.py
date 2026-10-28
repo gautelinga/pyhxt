@@ -28,13 +28,7 @@ mesh = pyhxt.tetrahedralize(points, triangles, markers, size_field=size,
                             regions={WATER: (.05, .05, .05), STEEL: tuple(CENTRE)})
 print(mesh)
 
-
-def volumes(m):
-    a, b, c, d = (m.points[m.tets[:, k]] for k in range(4))
-    return np.abs(np.einsum('ij,ij->i', b - a, np.cross(c - a, d - a))) / 6
-
-
-v = volumes(mesh)
+v = mesh.cell_volumes()
 for name, label in (('water', WATER), ('steel', STEEL)):
     inside = mesh.volume == label
     print(f'{name}: {inside.sum()} tets, volume {v[inside].sum():.5f}')

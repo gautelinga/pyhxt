@@ -15,8 +15,8 @@ from pyhxt import _lib
 from pyhxt._surface import surface
 from pyhxt.mesh import Mesh
 
-__version__ = '0.2.0'
-__all__ = ['tetrahedralize', 'Mesh', 'HXTError', 'library']
+__version__ = '0.3.0'
+__all__ = ['HXTError', 'Mesh', 'library', 'tetrahedralize']
 
 logger = logging.getLogger('pyhxt')
 library = _lib.library
@@ -66,7 +66,7 @@ def tetrahedralize(points, triangles=None, markers=None, *, volumes=None, holes=
     Speed
         threads: 0 for OpenMP's default (every core).
         seeds: (k, 3) points inserted before the surface. One inside each closed surface
-            whose points lie on a sphere (a bead, a ball) makes HXT's first Delaunay
+            whose points all lie on one sphere (a ball) makes HXT's first Delaunay
             mesh 10x faster there. Holes are seeds too.
         fast: pyhxt's faster boundary recovery and seeds first (default). False runs HXT
             exactly as gmsh 4.13.1 does.
@@ -92,8 +92,7 @@ def tetrahedralize(points, triangles=None, markers=None, *, volumes=None, holes=
         np.ascontiguousarray(markers, dtype=np.uint32).reshape(-1)
     if len(markers) != len(triangles) or (markers == 0).any():
         raise ValueError('one positive marker per triangle')
-    if len(triangles) and triangles.max() >= len(points):
-        raise ValueError('a triangle indexes a point that is not there')
+    _check_surface(points, triangles)
     extra = [np.asarray(a, dtype=np.float64).reshape(-1, 3) for a in (holes, seeds)
              if a is not None]
     seed = np.ascontiguousarray(np.vstack(extra) if extra else np.zeros((0, 3)))
@@ -194,6 +193,34 @@ def tetrahedralize(points, triangles=None, markers=None, *, volumes=None, holes=
         col = label[col]
     return Mesh(X, T, col, tri.astype(np.int64), tcol.astype(np.int64),
                 _info(messages, time.time() - start, len(T), nv.value, threads, flags))
+
+
+def _check_surface(points, triangles):
+    """The mistakes HXT would stop on with a message about its own internals, said plainly."""
+    if not len(triangles):
+        raise ValueError('no triangles')
+    if triangles.max() >= len(points):
+        raise ValueError('a triangle indexes a point that is not there')
+    t = triangles.astype(np.int64)
+    bad = (t[:, 0] == t[:, 1]) | (t[:, 1] == t[:, 2]) | (t[:, 0] == t[:, 2])
+    if bad.any():
+        raise ValueError(f'{bad.sum()} triangles use the same point twice '
+                         f'(the first: triangle {np.flatnonzero(bad)[0]})')
+    used = np.unique(t)
+    _, first = np.unique(points[used], axis=0, return_index=True)
+    if len(first) < len(used):
+        raise ValueError(f'{len(used) - len(first)} surface points repeat another point: '
+                         'merge them, so that neighbouring triangles share their points '
+                         '(meshio and trimesh do this when they read a file)')
+    # a closed surface uses every edge at least twice; an edge used once borders a gap
+    e = np.sort(np.concatenate([t[:, [0, 1]], t[:, [1, 2]], t[:, [2, 0]]]), axis=1)
+    keys, counts = np.unique(e[:, 0] * len(points) + e[:, 1], return_counts=True)
+    open_edges = (counts == 1).sum()
+    if open_edges:
+        k = keys[counts == 1][0]
+        raise ValueError(f'the surface is not closed: {open_edges} edges belong to only one '
+                         f'triangle (the first between points {k // len(points)} and '
+                         f'{k % len(points)})')
 
 
 def _info(messages, seconds, ntets, nvertices, threads, flags):

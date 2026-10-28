@@ -74,10 +74,72 @@ def test_info_and_logging(caplog):
     assert any('Delaunay' in r.message for r in caplog.records)
 
 
-def test_an_open_surface_raises_hxts_error():
+def test_an_open_surface_is_named():
     p, t, _ = shapes.box()
-    with pytest.raises(pyhxt.HXTError, match='HXT failed'):
+    with pytest.raises(ValueError, match='not closed: 3 edges'):
         pyhxt.tetrahedralize(p, t[:-1], threads=2)
+
+
+def test_repeated_points_are_named():
+    p, t, _ = shapes.box()
+    p, t = p[t].reshape(-1, 3), np.arange(3 * len(t)).reshape(-1, 3)   # as an unmerged STL
+    with pytest.raises(ValueError, match='repeat another point: merge them'):
+        pyhxt.tetrahedralize(p, t, threads=2)
+
+
+def test_a_degenerate_triangle_is_named():
+    p, t, _ = shapes.box()
+    t[3, 2] = t[3, 0]
+    with pytest.raises(ValueError, match='1 triangles use the same point twice'):
+        pyhxt.tetrahedralize(p, t, threads=2)
+
+
+def test_two_regions_sharing_a_wall_are_closed():
+    """A box split by an inner wall: edges where the wall meets the box have three triangles."""
+    left, right = shapes.box((0, 0, 0), (.5, 1, 1), n=2), shapes.box((.5, 0, 0), (1, 1, 1), n=2)
+    p, t, _ = shapes.combine(left, right)
+    p, inverse = np.unique(np.round(p, 12), axis=0, return_inverse=True)
+    t = inverse.reshape(-1)[t]
+    wall = (p[t][:, :, 0] == .5).all(axis=1)
+    t = t[~wall | (np.arange(len(t)) < len(left[1]))]   # the wall once: the left box's
+    m = pyhxt.tetrahedralize(p, t, regions={1: (.25, .5, .5), 2: (.75, .5, .5)}, threads=2)
+    assert set(np.unique(m.volume)) == {1, 2}
+    assert m.cell_volumes()[m.volume == 1].sum() == pytest.approx(.5, rel=1e-12)
+
+
+def test_cell_volumes_and_angles():
+    from pyhxt.mesh import Mesh
+    regular = np.array([[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1.]])
+    corner = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1.]])
+    m = Mesh(np.vstack([regular, corner]), np.array([[0, 1, 2, 3], [4, 5, 6, 7]]),
+             np.array([1, 1]), np.zeros((0, 3), int), np.zeros(0, int))
+    assert m.cell_volumes() == pytest.approx([8 / 3, 1 / 6])
+    a = m.dihedral_angles()
+    assert a[0] == pytest.approx(np.full(6, np.degrees(np.arccos(1 / 3))))
+    assert a[1] == pytest.approx([90, 90, 90] + 3 * [np.degrees(np.arccos(1 / 3 ** .5))])
+
+
+def test_report():
+    m = pyhxt.tetrahedralize(*ball_in_box(), holes=[(.5, .5, .5)], size=.1, threads=2)
+    r = m.report()
+    assert 'dihedral angles' in r and 'within 5 / 10 / 15' in r
+    assert m.cell_volumes().sum() == pytest.approx(volume(m.points, m.tets).sum())
+
+
+def test_command_line(tmp_path, capsys):
+    meshio = pytest.importorskip('meshio')
+    from pyhxt.__main__ import main
+    p, t, mk = ball_in_box()
+    meshio.Mesh(p, [('triangle', t)], cell_data={'markers': [mk]}).write(tmp_path / 'in.vtu')
+    main([str(tmp_path / 'in.vtu'), str(tmp_path / 'out.vtu'), '--size', '.1',
+          '--hole', '.5', '.5', '.5', '--threads', '2', '--boundary', str(tmp_path / 'b.vtu')])
+    assert 'wrote' in capsys.readouterr().out
+    assert len(meshio.read(tmp_path / 'out.vtu').cells_dict['tetra']) > 0
+    assert set(np.unique(meshio.read(tmp_path / 'b.vtu').cell_data['markers'][0])) == {1, 2}
+    open_surface = tmp_path / 'open.vtu'
+    meshio.Mesh(p, [('triangle', t[:-1])]).write(open_surface)
+    with pytest.raises(SystemExit, match='not closed'):
+        main([str(open_surface), str(tmp_path / 'x.vtu')])
 
 
 def test_meshio_in_and_out(tmp_path):
@@ -120,7 +182,7 @@ def test_many_threads_on_a_small_mesh():
     m = pyhxt.tetrahedralize(*shapes.combine(shapes.box(n=4), shapes.sphere(
         (.5, .5, .5), .3, subdivisions=4, marker=2)), holes=[(.5, .5, .5)], size=.05,
         threads=16)
-    p, t, mk = shapes.sphere((.5, .5, .5), .3, subdivisions=4)
+    p, t, _ = shapes.sphere((.5, .5, .5), .3, subdivisions=4)
     a, b, c = (p[t[:, k]] for k in range(3))
     ball = abs(np.einsum('ij,ij->', a, np.cross(b, c))) / 6
     assert volume(m.points, m.tets).sum() == pytest.approx(1 - ball, rel=1e-12)
