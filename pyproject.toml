@@ -18,7 +18,10 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest"]
+meshio = ["meshio"]
+pyvista = ["pyvista"]
+trimesh = ["trimesh"]
+test = ["pytest", "meshio"]
 
 [project.urls]
 Source = "https://github.com/gautelinga/pyhxt"

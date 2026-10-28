@@ -6,13 +6,16 @@ jobs:
     strategy:
       matrix:
         python: ["3.9", "3.12"]
+        extras: ["test"]
+        include:
+          - {python: "3.12", extras: "test,pyvista,trimesh"}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
       - name: Install (builds libpyhxt.so)
-        run: pip install ".[test]"
+        run: pip install ".[${{ matrix.extras }}]"
       - name: Tests, against the installed package
         run: |
           cd "$RUNNER_TEMP"

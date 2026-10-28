@@ -441,6 +441,19 @@ HXTStatus hxtRefineTetrahedra(HXTMesh* mesh,
         if(insphere(p[0], p[1], p[2], p[3], &newVertices[4*ptIndex])>=0.0)
           HXT_WARNING("new point is not in the circumsphere of the tet that spawned it");
 #endif
+        // pyhxt: getBestCenter means its point to be inside the tet that spawned it; with
+        // sizes the caller sets far below a nearly flat tet's edges it can land outside,
+        // even outside the mesh, and the insertion's cavity is then empty (a crash). Such
+        // a point is not inserted.
+        if(pyhxt_flags & PYHXT_CHECK_CENTRES) {
+          double* x = &newVertices[4*ptIndex];
+          double o = orient3d(p[0], p[1], p[2], p[3]);
+          double o0 = orient3d(x, p[1], p[2], p[3]), o1 = orient3d(p[0], x, p[2], p[3]);
+          double o2 = orient3d(p[0], p[1], x, p[3]), o3 = orient3d(p[0], p[1], p[2], x);
+          if(!(o > 0 ? (o0 > 0 && o1 > 0 && o2 > 0 && o3 > 0)
+                     : (o0 < 0 && o1 < 0 && o2 < 0 && o3 < 0)))
+            newVertices[4*ptIndex+3] = -DBL_MAX;
+        }
 
         ptToTet[ptIndex] = tet;
         ptIndex++;

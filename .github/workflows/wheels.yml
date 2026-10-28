@@ -1,0 +1,43 @@
+name: wheels
+# manylinux wheels for x86_64 and aarch64, each for any Python 3 (the library has no Python
+# in it: py3-none), tested in cibuildwheel's containers; and the source distribution. On a
+# tag v*, or by hand. Publishing to PyPI is not set up here.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  wheels:
+    name: wheel ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - {arch: x86_64, runner: ubuntu-latest}
+          - {arch: aarch64, runner: ubuntu-24.04-arm}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pypa/cibuildwheel@v2.22.0
+        env:
+          # one build per architecture: the wheel is py3-none
+          CIBW_BUILD: "cp312-manylinux_${{ matrix.arch }}"
+          CIBW_ARCHS_LINUX: ${{ matrix.arch }}
+          CIBW_TEST_REQUIRES: pytest meshio
+          CIBW_TEST_COMMAND: >
+            pytest -q {project}/tests &&
+            python {project}/test.py "$(python -c 'import os, pyhxt; print(os.path.join(os.path.dirname(pyhxt.__file__), "libpyhxt.so"))')"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.arch }}
+          path: wheelhouse/*.whl
+
+  sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pipx run build --sdist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz

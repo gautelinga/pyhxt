@@ -9,7 +9,7 @@ import sys
 
 lib = ctypes.CDLL(sys.argv[1] if len(sys.argv) > 1 else
                   os.path.join(os.path.dirname(os.path.abspath(__file__)), 'libpyhxt.so'))
-assert lib.pyhxt_abi() == 2, lib.pyhxt_abi()
+assert lib.pyhxt_abi() == 3, lib.pyhxt_abi()
 u32 = ctypes.c_uint32
 xyz = [float(c) for i in range(8) for c in ((i & 1), (i >> 1) & 1, (i >> 2) & 1)]
 quads = [(0, 2, 3, 1), (4, 5, 7, 6), (0, 1, 5, 4), (2, 6, 7, 3), (0, 4, 6, 2), (1, 3, 7, 5)]
@@ -24,11 +24,12 @@ def arr(t, v):
 def mesh_cube(flags, seeds):
     mesh = ctypes.c_void_p()
     status = lib.pyhxt_tetmesh(
-        u32(8), arr(ctypes.c_double, xyz), u32(len(seeds) // 3), arr(ctypes.c_double, seeds),
-        u32(0), ctypes.c_uint64(12), arr(u32, tris), arr(u32, [1] * 12), u32(1), arr(u32, [0, 1]),
-        arr(u32, [1]), ctypes.c_int(2), ctypes.c_double(0.), ctypes.c_double(0.3),
-        ctypes.c_double(3 ** .5), ctypes.c_double(1e-12), ctypes.c_double(0.3), ctypes.c_int(1),
-        ctypes.c_int(flags), None, ctypes.byref(mesh))
+        u32(8), arr(ctypes.c_double, xyz), None, u32(len(seeds) // 3),
+        arr(ctypes.c_double, seeds), u32(0), ctypes.c_uint64(12), arr(u32, tris),
+        arr(u32, [1] * 12), u32(1), arr(u32, [0, 1]), arr(u32, [1]), ctypes.c_int(2),
+        ctypes.c_double(0.), ctypes.c_double(0.3), ctypes.c_double(3 ** .5),
+        ctypes.c_double(1e-12), ctypes.c_double(0.3), ctypes.c_int(1), ctypes.c_int(flags),
+        None, None, None, ctypes.byref(mesh))
     assert status == 0, status
     nv, nt, ntri = u32(), ctypes.c_uint64(), ctypes.c_uint64()
     lib.pyhxt_counts(mesh, ctypes.byref(nv), ctypes.byref(nt), ctypes.byref(ntri))

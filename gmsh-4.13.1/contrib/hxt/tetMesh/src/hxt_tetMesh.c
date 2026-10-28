@@ -213,6 +213,17 @@ HXTStatus hxtTetMesh(HXTMesh* mesh,
   if(options->optimize) {
     HXT_CHECK( setFlagsToProcessOnlyVolumesInBrep(mesh) );
 
+    // pyhxt: at most a thread per 100 000 tets for the optimisation. HXT's parallel edge
+    // removal corrupted a small mesh (31 k tets) on 16 threads and then crashed on it;
+    // its meshes of 50 M tets and more on 8-56 threads were not affected, nor changed by
+    // this.
+    if (pyhxt_flags & PYHXT_SMALL_MESH_THREADS) {
+      int cap = (int) (mesh->tetrahedra.num / 100000);
+      if (cap < 1) cap = 1;
+      if (options->improveThreads <= 0 || options->improveThreads > cap)
+        options->improveThreads = cap;
+    }
+
     HXT_CHECK( hxtOptimizeTetrahedra(mesh,
                                      &(HXTOptimizeOptions) {
                                        .bbox = &bbox,

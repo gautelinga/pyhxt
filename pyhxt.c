@@ -1,61 +1,86 @@
 /* pyhxt: HXT's hxtTetMesh called as gmsh 4.13.1's meshGRegionHxt.cpp calls it, on arrays,
  * with pyhxt's switches (pyhxt_flags.h) on top. Built against gmsh 4.13.1's contrib/hxt
  * sources. AGPL-3.0-or-later. */
+#include <float.h>
 #include <stdio.h>
 #include <stdint.h>
 #include "hxt_tetMesh.h"
 #include "hxt_tools.h"
+#include "predicates.h"
 #include "pyhxt_flags.h"
 
 int pyhxt_flags = 0;
 uint32_t pyhxt_hole_first = 0, pyhxt_num_holes = 0;
 uint64_t* pyhxt_tri2tet = NULL;
+
+/* a size field: sets pts[4 i + 3] for each of the n points (x, y, z, interpolated size);
+ * returns 0, or non-zero to stop meshing */
+typedef int (*pyhxt_field_fn)(double *pts, uint64_t n);
+/* HXT's messages: level 0 info, 1 debug, 2 warning, 3 error, 4 trace */
+typedef void (*pyhxt_message_fn)(int level, const char *text);
+
 static FILE *logfile = NULL;
+static pyhxt_message_fn message = NULL;
 
 static HXTStatus messageCallback(HXTMessage *msg)
 {
-  if(msg && logfile) {
+  if(!msg) return HXT_STATUS_OK;
+  if(logfile) {
     const char *level[] = {"Info", "Debug", "Warning", "Error", "Trace"};
     fprintf(logfile, "%s: %s\n", level[msg->level], msg->string);
     fflush(logfile);
   }
+  if(message) message((int)msg->level, msg->string);
   return HXT_STATUS_OK;
 }
 
+typedef struct {
+  double lcGlob;
+  pyhxt_field_fn field;
+} SizeData;
+
 /* gmsh's nodalSizesCallBack with no size field, point size or entity size: the
  * background size is MAX_LC, so a point keeps its interpolated size capped by the
- * model's characteristic length, or takes that length where it has none */
+ * model's characteristic length, or takes that length where it has none. A user's field
+ * then lowers it where it asks for smaller. */
 static HXTStatus nodalSizes(double *pts, uint32_t *volume, size_t n, void *data)
 {
-  double lcGlob = *(double *)data;
+  SizeData *d = data;
   HXT_INFO("Computing interpolated mesh sizes...");
   for(size_t i = 0; i < n; i++) {
     double s = pts[4 * i + 3];
-    pts[4 * i + 3] = s > 0.0 ? (lcGlob < s ? lcGlob : s) : lcGlob;
+    pts[4 * i + 3] = s > 0.0 ? (d->lcGlob < s ? d->lcGlob : s) : d->lcGlob;
   }
+  if(d->field && d->field(pts, n))
+    return HXT_ERROR_MSG(HXT_STATUS_ERROR, "the size field failed");
   HXT_INFO("Done computing interpolated mesh sizes");
   return HXT_STATUS_OK;
 }
 
-/* The version of this interface: 2 added nholes. */
-int pyhxt_abi(void) { return 2; }
+/* The version of this interface: 2 added nholes; 3 the point sizes, the size field and
+ * the message callback, and pyhxt_locate. */
+int pyhxt_abi(void) { return 3; }
 
-/* xyz: nv x 3, the surface's vertices; seeds: nseed x 3, embedded points, which follow
- * them as vertices nv, nv + 1, ..., the first nholes of them hole points (the volumes
- * holding them are left out); tri: ntri x 3 with one color each; volumes: nvol, each
- * bounded by the surfaces surfaces[offsets[i]:offsets[i+1]], or nvol 0 for every volume
- * HXT finds; flags: pyhxt_flags.h (0: as gmsh). On success *out holds HXT's mesh. */
-int pyhxt_tetmesh(uint32_t nv, const double *xyz, uint32_t nseed, const double *seeds,
-                  uint32_t nholes, uint64_t ntri, const uint32_t *tri,
+/* xyz: nv x 3, the surface's vertices, and sizes: nv target sizes there (0: from the
+ * surface's edges), or NULL; seeds: nseed x 3, embedded points, which follow them as
+ * vertices nv, nv + 1, ..., the first nholes of them hole points (the volumes holding
+ * them are left out); tri: ntri x 3 with one color each; volumes: nvol, each bounded by
+ * the surfaces surfaces[offsets[i]:offsets[i+1]], or nvol 0 for every volume HXT finds;
+ * flags: pyhxt_flags.h (0: as gmsh); field and messages: callbacks, or NULL. On success
+ * *out holds HXT's mesh. */
+int pyhxt_tetmesh(uint32_t nv, const double *xyz, const double *sizes, uint32_t nseed,
+                  const double *seeds, uint32_t nholes, uint64_t ntri, const uint32_t *tri,
                   const uint32_t *color, uint32_t nvol, const uint32_t *offsets,
-                  const uint32_t *surfaces, int threads,
-                  double sizeMin, double sizeMax, double lcGlob, double tolerance,
-                  double qualityMin, int optimize, int flags, const char *logpath,
-                  void **out)
+                  const uint32_t *surfaces, int threads, double sizeMin, double sizeMax,
+                  double lcGlob, double tolerance, double qualityMin, int optimize,
+                  int flags, pyhxt_field_fn field, pyhxt_message_fn messages,
+                  const char *logpath, void **out)
 {
   HXTMesh *m = NULL;
+  SizeData sizeData = {lcGlob, field};
   *out = NULL;
   logfile = logpath ? fopen(logpath, "a") : NULL;
+  message = messages;
   hxtSetMessageCallback(messageCallback);
   HXTStatus status = hxtMeshCreate(&m);
   if(status != HXT_STATUS_OK) goto done;
@@ -72,7 +97,7 @@ int pyhxt_tetmesh(uint32_t nv, const double *xyz, uint32_t nseed, const double *
     m->vertices.coord[4 * i + 0] = x[0];
     m->vertices.coord[4 * i + 1] = x[1];
     m->vertices.coord[4 * i + 2] = x[2];
-    m->vertices.coord[4 * i + 3] = 0.0;
+    m->vertices.coord[4 * i + 3] = sizes && i < nv && sizes[i] > 0.0 ? sizes[i] : 0.0;
   }
   if(nseed) {
     m->points.num = m->points.size = nseed;
@@ -118,7 +143,7 @@ options:;
     optimize,
     tolerance,
     {NULL, NULL, qualityMin},
-    {nodalSizes, &lcGlob, sizeMin, sizeMax, 1.0}};
+    {nodalSizes, &sizeData, sizeMin, sizeMax, 1.0}};
   status = hxtTetMesh(m, &options);
 
 done:
@@ -135,6 +160,7 @@ done:
     hxtMeshDelete(&m);
   if(logfile) fclose(logfile);
   logfile = NULL;
+  message = NULL;
   return (int)status;
 }
 
@@ -170,4 +196,34 @@ void pyhxt_copy_triangle_colors(void *mesh, uint32_t *colors)
   HXTMesh *m = mesh;
   for(uint64_t i = 0; i < m->triangles.num; i++)
     colors[i] = m->triangles.color ? m->triangles.color[i] : 0;
+}
+
+/* the color of the meshed tet holding each of the n points xyz (on its boundary counts),
+ * or UINT32_MAX for a point in no meshed tet; a scan of all tets per point, with exact
+ * orientation tests, in parallel */
+void pyhxt_locate(void *mesh, uint32_t n, const double *xyz, uint32_t *color)
+{
+  HXTMesh *m = mesh;
+  const double *X = m->vertices.coord;
+  for(uint32_t p = 0; p < n; p++) {
+    const double *q = xyz + 3 * (size_t)p;
+    uint64_t found = UINT64_MAX;
+    #pragma omp parallel for reduction(min:found) schedule(static)
+    for(uint64_t t = 0; t < m->tetrahedra.num; t++) {
+      const uint32_t *v = m->tetrahedra.node + 4 * t;
+      if(v[3] == HXT_GHOST_VERTEX || m->tetrahedra.color[t] == HXT_COLOR_OUT) continue;
+      double a[3], b[3], c[3], d[3];
+      for(int k = 0; k < 3; k++) {
+        a[k] = X[4 * v[0] + k]; b[k] = X[4 * v[1] + k];
+        c[k] = X[4 * v[2] + k]; d[k] = X[4 * v[3] + k];
+      }
+      double o = orient3d(a, b, c, d);
+      double o0 = orient3d(q, b, c, d), o1 = orient3d(a, q, c, d);
+      double o2 = orient3d(a, b, q, d), o3 = orient3d(a, b, c, q);
+      if(o > 0 ? (o0 >= 0 && o1 >= 0 && o2 >= 0 && o3 >= 0)
+               : (o0 <= 0 && o1 <= 0 && o2 <= 0 && o3 <= 0))
+        found = t < found ? t : found;
+    }
+    color[p] = found == UINT64_MAX ? UINT32_MAX : m->tetrahedra.color[found];
+  }
 }
