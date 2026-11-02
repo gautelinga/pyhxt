@@ -9,7 +9,7 @@ import sys
 
 lib = ctypes.CDLL(sys.argv[1] if len(sys.argv) > 1 else
                   os.path.join(os.path.dirname(os.path.abspath(__file__)), 'libpyhxt.so'))
-assert lib.pyhxt_abi() == 3, lib.pyhxt_abi()
+assert lib.pyhxt_abi() == 4, lib.pyhxt_abi()
 u32 = ctypes.c_uint32
 xyz = [float(c) for i in range(8) for c in ((i & 1), (i >> 1) & 1, (i >> 2) & 1)]
 quads = [(0, 2, 3, 1), (4, 5, 7, 6), (0, 1, 5, 4), (2, 6, 7, 3), (0, 4, 6, 2), (1, 3, 7, 5)]
