@@ -18,7 +18,7 @@ OBJ=$(mktemp -d); trap 'rm -rf "$OBJ"' EXIT
 pids=()
 for f in $H/core/src/hxt_{bbox,mesh,message,sort}.c \
          $H/tetMesh/src/{hxt_edgeRemoval,hxt_smoothing,HXTSPR,hxt_tetColor,hxt_tetDelaunay,hxt_tetDelaunayReshape,hxt_tetFlag,hxt_tetMesh,hxt_tetNodalSize,hxt_tetOpti,hxt_tetQuality,hxt_tetRefine,hxt_tetRepair,hxt_tetSync,hxt_tetUtils,hxt_vertices}.c \
-         $HERE/pyhxt.c; do
+         $HERE/pyhxt.c $HERE/pyhxt_tidy.c; do
   $CC -std=gnu99 $CFLAGS $INC -c "$f" -o "$OBJ/$(basename "$f" .c).o" & pids+=($!)
 done
 $CC -std=gnu99 $CFLAGS -fno-unsafe-math-optimizations $INC -c $H/predicates/src/predicates.c -o "$OBJ/predicates.o" & pids+=($!)

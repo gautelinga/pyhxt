@@ -73,6 +73,20 @@ To check the result, `mesh.report()` gives a few lines: the size, each volume, a
 dihedral angles, with how many tets are close to flat. `mesh.cell_volumes()` and
 `mesh.dihedral_angles()` give the numbers per tet.
 
+**Slivers HXT leaves.** HXT's optimiser may not change the surface, so tets it cannot improve
+without moving a surface point stay. Two passes after meshing deal with them; both measure a
+tet by `mesh.flatness()`, the angle by which it falls short of flat (the smaller of its smallest
+dihedral and 180 less its largest):
+- `mesh.relax_slivers(angle=10)` moves the interior vertices of the tets within `angle` of
+  flat to where their stars are furthest from flat, never turning a tet inside out. With
+  `slide=(mask, centres, radii)`, boundary vertices on a sphere may move along it, which is the
+  only help for a sliver whose four vertices are all on the boundary. It is Nelder-Mead per
+  vertex in C, a few seconds for thousands of slivers.
+- `mesh.peel_flat(protect=())` removes a tet of no volume that spans two adjacent boundary
+  triangles lying in one plane, by swapping their shared diagonal: the boundary is the same set
+  of points, its triangulation not, so triangles with a marker in `protect` are never changed.
+`pyhxt.flatness`, `pyhxt.relax_slivers` and `pyhxt.peel_flat` do the same on plain arrays.
+
 To use another library, call `mesh.to_meshio()` or `mesh.to_pyvista()`, or `mesh.write(path)` to
 save a file. If HXT can't mesh the surface, you get a `pyhxt.HXTError`; HXT's messages also go to
 the `pyhxt` logger.
@@ -91,7 +105,8 @@ Examples, in [`examples/`](examples):
 
 - **Make the surface at about the size you want.** HXT never splits surface triangles, so a
   large one shapes the tets next to it. pyhxt warns when the surface is much coarser than `size`.
-- **Angles.** HXT improves poor tets but, unlike TetGen, guarantees no angle bound.
+- **Angles.** HXT improves poor tets but, unlike TetGen, guarantees no angle bound;
+  `relax_slivers` and `peel_flat` take care of most of what is left.
 - **Speed.** Small meshes take well under a second. A 1.2-billion-tet mesh took HXT 7
   minutes on 56 cores and about 100 GB of memory.
 - **Other meshers.**

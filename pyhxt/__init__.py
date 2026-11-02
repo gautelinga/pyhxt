@@ -14,9 +14,11 @@ import numpy as np
 from pyhxt import _lib
 from pyhxt._surface import surface
 from pyhxt.mesh import Mesh
+from pyhxt.tidy import flatness, peel_flat, relax_slivers
 
-__version__ = '0.3.1'
-__all__ = ['HXTError', 'Mesh', 'library', 'tetrahedralize']
+__version__ = '0.4.0'
+__all__ = ['HXTError', 'Mesh', 'flatness', 'library', 'peel_flat', 'relax_slivers',
+           'tetrahedralize']
 
 logger = logging.getLogger('pyhxt')
 library = _lib.library

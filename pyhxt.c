@@ -58,8 +58,9 @@ static HXTStatus nodalSizes(double *pts, uint32_t *volume, size_t n, void *data)
 }
 
 /* The version of this interface: 2 added nholes; 3 the point sizes, the size field and
- * the message callback, and pyhxt_locate. */
-int pyhxt_abi(void) { return 3; }
+ * the message callback, and pyhxt_locate; 4 pyhxt_tidy.c's pyhxt_quality, pyhxt_peel_flat and
+ * pyhxt_relax_slivers. */
+int pyhxt_abi(void) { return 4; }
 
 /* xyz: nv x 3, the surface's vertices, and sizes: nv target sizes there (0: from the
  * surface's edges), or NULL; seeds: nseed x 3, embedded points, which follow them as

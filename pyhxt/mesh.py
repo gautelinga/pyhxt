@@ -55,6 +55,33 @@ class Mesh:
                 out[s, e] = 180 - np.degrees(np.arccos(cos))
         return out
 
+    def flatness(self):
+        """(m,) each tet's distance from flat in degrees: the smaller of its smallest
+        dihedral angle and 180 less its largest (pyhxt.flatness)."""
+        from pyhxt.tidy import flatness
+        return flatness(self.points, self.tets)[0]
+
+    def peel_flat(self, protect=(), flat=1e-9):
+        """Removes the tets of no volume spanning two coplanar boundary triangles, swapping
+        the triangles' diagonal (pyhxt.peel_flat); triangles with a marker in `protect` are
+        never changed. Returns how many were removed."""
+        from pyhxt.tidy import peel_flat
+        self.tets, self.triangles, removed = peel_flat(self.points, self.tets, self.triangles,
+                                                       self.markers, protect, flat)
+        self.volume = self.volume[~removed]
+        return int(removed.sum())
+
+    def relax_slivers(self, angle=10., slide=None, sweeps=3):
+        """Moves the interior vertices of the tets within `angle` degrees of flat to where
+        their stars are furthest from flat (pyhxt.relax_slivers); the boundary's vertices
+        stay, unless `slide` lets some move along a sphere. Returns (before, after, slid)."""
+        from pyhxt.tidy import relax_slivers
+        fixed = np.zeros(len(self.points), dtype=bool)
+        fixed[self.triangles.ravel()] = True
+        self.points, stats = relax_slivers(self.points, self.tets, angle, fixed, slide,
+                                           sweeps)
+        return stats
+
     def report(self):
         """A few lines on the mesh: its size, each volume's tets and extent, and the
         dihedral angles (the smallest and largest, and how many tets are near flat)."""

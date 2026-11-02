@@ -6,7 +6,7 @@ import os
 import numpy as np
 
 #: pyhxt_abi() of the library this package calls
-ABI = 3
+ABI = 4
 
 # pyhxt_flags.h
 PREBOND, NO_RECOVER_DELAUNAY, SEEDS_FIRST, NONREPRODUCIBLE, CHECK_CENTRES = 1, 2, 4, 8, 16
@@ -50,5 +50,13 @@ def library():
     lib.pyhxt_copy_triangle_colors.argtypes = [ptr, U32]
     lib.pyhxt_locate.argtypes = [ptr, u32, F64, U32]
     lib.pyhxt_free.argtypes = [ptr]
+    # pyhxt_tidy.c: arrays by address (the callers make them contiguous of the right type)
+    lib.pyhxt_quality.argtypes = [u64, ptr, ptr, ptr, ptr]
+    lib.pyhxt_quality.restype = None
+    lib.pyhxt_peel_flat.argtypes = [u64, ptr, u64, ptr, u64, ptr, ptr, f64, u64, ptr, ptr]
+    lib.pyhxt_peel_flat.restype = ctypes.c_int64
+    lib.pyhxt_relax_slivers.argtypes = [u64, ptr, u64, ptr, ptr, ptr, ptr, ptr, ptr, f64,
+                                        ctypes.c_int, ctypes.c_int, ptr]
+    lib.pyhxt_relax_slivers.restype = ctypes.c_int
     _lib = lib
     return lib
